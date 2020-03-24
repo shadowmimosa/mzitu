@@ -3,10 +3,10 @@ from common.request import *
 from common.soup import DealSoup
 from common.mongo import MongoOpea
 
-mongo = MongoOpea()
-req = DealRequest().run
-soup = DealSoup().judge
-header = {
+MONGO = MongoOpea()
+REQ = DealRequest().run
+SOUP = DealSoup().judge
+HEADER = {
     'User-Agent':
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.100 Safari/537.36',
     'Accept':
@@ -14,7 +14,7 @@ header = {
     'Accept-Encoding': 'gzip, deflate, br',
     'Accept-Language': 'zh-CN,zh;q=0.9'
 }
-image_header = {
+IMAGE_HEADER = {
     'User-Agent':
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.100 Safari/537.36',
     'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
@@ -22,13 +22,25 @@ image_header = {
     'Accept-Encoding': 'gzip, deflate, br',
     'Accept-Language': 'zh-CN,zh;q=0.9'
 }
+CONFIG = MONGO.select('domain', _id=False)
+ROOT_PATH = {
+    'special_thumb': f'./static/{CONFIG.get("special_thumb_root")}',
+    'album_thumb': f'./static/{CONFIG.get("album_thumb_root")}',
+    'images': f'./static/{CONFIG.get("album_root")}',
+}
+HOSTS = {
+    'album_thumb_host': CONFIG.get('album_thumb_host'),
+    'special_thumb_host': CONFIG.get('special_thumb_host'),
+    'album_host': CONFIG.get('album_host'),
+    'special_host': CONFIG.get('special_host'),
+}
 
 
 def init_path():
-    for path in ['./static/mw690/', './static/thumb/', './static/images/']:
-        if os.path.isdir(path):
+    for key in ROOT_PATH:
+        if os.path.isdir(ROOT_PATH[key]):
             continue
-        os.makedirs(path)
+        os.makedirs(ROOT_PATH[key])
 
 
 def save(path, content):
@@ -37,17 +49,17 @@ def save(path, content):
 
 
 def image_download(uri):
-    return req(uri, image_header, byte=True)
+    return REQ(uri, IMAGE_HEADER, byte=True)
 
 
 def special_thumb():
     init_path()
-
-    results = mongo.select('special', limit=200)
+    domain = f'{HOSTS["special_thumb_host"]}{ROOT_PATH["special_thumb"]}'
+    results = MONGO.select('special', limit=200)
     for result in results:
         path = result.get('special_thumb')
         _id = result.get("_id")
-        if 'https://wxt.sinaimg.cn/mw690/' not in path:
+        if domain not in path:
             logger.error(f'special host not in {_id}')
             return
 
@@ -56,47 +68,47 @@ def special_thumb():
         save(f'static/mw690/{filename}', content)
         logger.info(f'已保存 - {filename}')
 
-        result = mongo.update({'_id': result.get('_id')}, {
-            'special_thumb':
-            path.replace('https://wxt.sinaimg.cn/mw690/', '')
-        }, 'special')
+        result = MONGO.update({'_id': result.get('_id')},
+                              {'special_thumb': path.replace(domain, '')},
+                              'special')
 
         logger.info(f'已更新 - {_id}')
 
 
 def albums_thumb():
     init_path()
-
-    results = mongo.select('albums', limit=200)
+    domain = f'{HOSTS["album_thumb_host"]}{ROOT_PATH["album_thumb"]}'
+    results = MONGO.select('albums', limit=200)
     while results:
         for result in results:
             path = result.get('album_thumb')
             _id = result.get("_id")
-            if 'https://i.mmzztt.com/thumb/' not in path:
+            if domain not in path:
                 logger.error(f'albums host not in {_id}')
                 continue
 
             content = image_download(path)
-            dirpath = f'static/thumb/{path.split("thumb/")[-1]}'
-            os.makedirs(dirpath)
-            save(dirpath, content)
-            logger.info(f'已保存 - {dirpath}')
+            fullpath = f'static/thumb/{path.split("thumb/")[-1]}'
+            dirpath = fullpath.replace(fullpath.split('/')[-1], '')
+            if not os.path.isdir(dirpath):
+                os.makedirs(dirpath)
+            save(fullpath, content)
+            logger.info(f'已保存 - {fullpath}')
 
-            result = mongo.update({'_id': result.get('_id')}, {
-                'album_thumb':
-                path.replace('https://i.mmzztt.com/thumb/', '')
-            }, 'special')
+            result = MONGO.update({'_id': _id},
+                                  {'album_thumb': path.replace(domain, '')},
+                                  'albums')
 
             logger.info(f'已更新 - {_id}')
 
-        results = mongo.select('albums', {'$gt': _id}, limit=200)
+        results = MONGO.select('albums', {'_id': {'$gt': _id}}, limit=200)
 
 
 def home_page():
     special = None
 
-    resp = req('https://www.mzitu.com/zhuanti/', header)
-    tag = soup(resp, {'class': 'tags'})
+    resp = REQ(HOSTS['special_host'], HEADER)
+    tag = SOUP(resp, {'class': 'tags'})
 
     for dd in tag.contents:
         if isinstance(dd, str):
@@ -119,19 +131,19 @@ def home_page():
             result = secondary_page(href)
             info['children'] = result
 
-            result = mongo.repeat({'special_tag': info['special_tag']}, info,
+            result = MONGO.repeat({'special_tag': info['special_tag']}, info,
                                   'special')
             logger.info(f'已插入 - special - {result}')
 
 
 def secondary_page(uri, page=1):
     data = []
-    resp = req(uri, header)
+    resp = REQ(uri, HEADER)
 
     if not resp:
         return data
 
-    pin = soup(resp, {'id': 'pins'})
+    pin = SOUP(resp, {'id': 'pins'})
 
     for li in pin.contents:
         if isinstance(li, str):
@@ -146,9 +158,9 @@ def secondary_page(uri, page=1):
             info['page'] = page
 
             condition = {'album_id': info['album_id']}
-            result = mongo.repeat(condition, info, 'albums')
+            result = MONGO.repeat(condition, info, 'albums')
             if not result:
-                result = mongo.select('albums', condition)
+                result = MONGO.select('albums', condition)
                 logger.info(f'已存在 - albums - {result}')
             else:
                 logger.info(f'已插入 - albums - {result}')

@@ -30,7 +30,7 @@ class MongoOpea(object):
         return result.upserted_id
 
     def insert(self, data, table):
-
+        data['created_at'] = datetime.utcnow()
         if isinstance(data, list):
             result = self.mongo[table].insert_many(data)
             return result.inserted_ids
@@ -38,15 +38,19 @@ class MongoOpea(object):
             result = self.mongo[table].insert_one(data)
             return result.inserted_id
 
-    def select(self, table, query={}, limit=1):
+    def select(self, table, query={}, limit=1, _id=True):
         if limit == 1:
             result = self.mongo[table].find_one(query)
-            return result.get('_id')
+            if _id and result:
+                return result.get('_id')
+            else:
+                return result
         else:
             result = self.mongo[table].find(query).limit(limit)
             return list(result)
 
     def update(self, query, data, table, multi=False):
+        data['updated_at'] = datetime.utcnow()
         if not multi:
             result = self.mongo[table].update_one(query, {'$set': data})
             return result.upserted_id

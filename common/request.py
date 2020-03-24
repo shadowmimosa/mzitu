@@ -1,10 +1,19 @@
+import time
+import random
 import urllib3
 import requests
 from common.log import logger
 
 
+def magic():
+    sleep_time = round(random.uniform(0, 3), 2)
+    logger.info(f'魔法时间 - {sleep_time}')
+    time.sleep(sleep_time)
+
+
 class DealRequest(object):
-    def __init__(self):
+    def __init__(self, proxy=None):
+        self.proxy = proxy
         self.logger = logger
         self.session = self.init_session()
         super().__init__()
@@ -32,9 +41,10 @@ class DealRequest(object):
         param['url'] = path
         param['headers'] = header
         param['data'] = data
-        param['timeout'] = (3, 15)
-        param['proxies'] = None
+        param['timeout'] = (4, 20)
+        param['proxies'] = self.proxy
         param['cookies'] = kwargs.get('cookies')
+        param['allow_redirects'] = False
 
         self.params = param
 
@@ -61,14 +71,22 @@ class DealRequest(object):
             else:
                 resp = self.get()
 
-            if resp:
-                if resp.status_code == 200:
+            status_code = resp.status_code
+            if status_code == 200:
+                if self.proxy and resp.text == '{"code":200,"msg":"超过并发限制"}':
+                    logger.info('超过并发限制')
+                    magic()
+                    self.retry(get)
+                else:
                     return resp
-                elif resp.status_code == 404:
-                    return
+            elif 400 <= status_code < 500:
+                return status_code
+            elif 300 <= status_code <= 304:
+                self.params['url'] = resp.headers['Location']
+                return self.retry(get)
             else:
                 retry_count -= 1
-                logger.info(f'第 {6-retry_count} 次尝试')
+                logger.info(f'第 {5-retry_count} 次尝试')
 
     def run(self, path, header={}, data=None, byte=None, json=None, **kwargs):
         self.package(path, header, data=None, **kwargs)
