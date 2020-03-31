@@ -5,16 +5,22 @@ import traceback
 from concurrent.futures.thread import ThreadPoolExecutor
 from concurrent.futures.process import ProcessPoolExecutor
 
+from headers import ua
 from config import PROXY
 from common.request import *
 from common.soup import DealSoup
 from common.mongo import MongoOpea
 
 MONGO = MongoOpea()
-REQ = DealRequest({
-    "http": "http://dynamic.xiongmaodaili.com:8089",
-    "https": "http://dynamic.xiongmaodaili.com:8089"
-}).run
+
+if PROXY.get('proxy'):
+    REQ = DealRequest({
+        "http": "http://dynamic.xiongmaodaili.com:8089",
+        "https": "http://dynamic.xiongmaodaili.com:8089"
+    }).run
+else:
+    REQ = DealRequest().run
+
 SOUP = DealSoup().judge
 HEADER = {
     'User-Agent':
@@ -53,6 +59,8 @@ def build_header(image=False):
         header = IMAGE_HEADER
     else:
         header = HEADER
+
+    # HEADER['User-Agent'] = ua()
 
     if PROXY.get('proxy'):
         header.update({'Proxy-Authorization': made_secret()})
@@ -102,36 +110,26 @@ class CollectBaby(object):
 
         soup = SOUP(html, {'class': 'main-image'})
 
-        nextpage = soup.a['href']
+        a= soup.a
+        if not a:
+            return
+
+        nextpage = a['href']
         img_url = soup.img['src']
         temp = img_url.split('//')
         domain = f'{temp[0]}//{temp[-1].split("/")[0]}'
         fullpath = f'static/images{img_url.replace(domain, "")}'
+
+        info = {'album': self._id, 'image': fullpath, 'page': page}
+        result = MONGO.repeat({'image': fullpath}, info, 'images')
         save_status = save(fullpath, img_url)
-        if not save_status:
-            result = MONGO.select('images', {
-                'album': self._id,
-                'image': fullpath,
-                'page': page
-            })
-            if not result:
-                result = MONGO.insert(
-                    {
-                        'image': fullpath,
-                        'page': page,
-                        'album': self._id,
-                    }, 'images')
-                logger.info(f'已下载 - {result}')      
-            else:          
-                logger.info(f'已读取 - {result}')
-        else:
-            result = MONGO.insert(
-                {
-                    'image': fullpath,
-                    'page': page,
-                    'album': self._id,
-                }, 'images')
+        # save_status = True
+        # result = 1
+
+        if save_status:
             logger.info(f'已下载 - {result}')
+        else:
+            logger.info(f'已读取 - {result}')
 
         self.pics.append(result)
 
@@ -158,7 +156,9 @@ class CollectBaby(object):
                 try:
                     self.detail(resp, page)
                 except Exception as exc:
-                    logger.error(f'{self.album_id} - detail is error - {traceback.format_exc()}')
+                    logger.error(
+                        f'{self.album_id} - detail is error - {traceback.format_exc()}'
+                    )
                     retry_count -= 1
                 else:
                     page += 1
