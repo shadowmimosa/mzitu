@@ -1,9 +1,9 @@
 import bs4
-
+import threading
 from bs4 import BeautifulSoup
 
 
-class DealSoup(object):
+class DealSoup(threading.local):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -32,7 +32,7 @@ class DealSoup(object):
             self.soup = self.content
         elif isinstance(self.content, bs4.BeautifulSoup):
             print("略略略")
-    
+
     def judge(self, content, attr: dict = None, all_tag: bool = False):
         self.content = content
         self.attr = attr

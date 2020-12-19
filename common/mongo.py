@@ -2,7 +2,7 @@ from urllib import parse
 from datetime import datetime
 from pymongo import MongoClient
 
-from config import MONGO, DEBUG
+from config import MONGO
 
 
 class MongoOpea(object):
@@ -12,7 +12,7 @@ class MongoOpea(object):
 
     def init_mongo(self):
 
-        config = MONGO["debug"]
+        config = MONGO
 
         config["user"] = parse.quote_plus(config["user"])
         config["passwd"] = parse.quote_plus(config["passwd"])
@@ -21,13 +21,17 @@ class MongoOpea(object):
             "mongodb://{user}:{passwd}@{host}:{port}/".format(**config),
             connect=False)
 
-        self.mongo = client[config.get('basedata')]
+        self.mongo = client[config.get('database')]
 
     def repeat(self, condition, data, table):
         data['created_at'] = datetime.utcnow()
         result = self.mongo[table].update_one(condition, {'$set': data}, True)
 
-        return result.upserted_id
+        result_id = result.upserted_id
+        if not result_id:
+            result_id = self.select(table, condition)
+
+        return result_id
 
     def insert(self, data, table):
         data['created_at'] = datetime.utcnow()

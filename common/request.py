@@ -2,6 +2,7 @@ import time
 import random
 import urllib3
 import requests
+import threading
 from common.log import logger
 
 
@@ -11,7 +12,7 @@ def magic():
     time.sleep(sleep_time)
 
 
-class DealRequest(object):
+class DealRequest(threading.local):
     def __init__(self, proxy=None):
         self.proxy = proxy
         self.logger = logger
@@ -71,11 +72,21 @@ class DealRequest(object):
             else:
                 resp = self.get()
 
-            status_code = resp.status_code
+            try:
+                status_code = resp.status_code
+            except Exception:
+                retry_count -= 1
+                continue
+
             if status_code == 200:
                 if self.proxy and resp.text == '{"code":200,"msg":"超过并发限制"}':
                     logger.info('超过并发限制')
                     magic()
+                    self.retry(get)
+                elif resp.headers.get('content-length') and int(
+                        resp.headers.get('content-length')) > len(
+                            resp.content):
+                    logger.warning('文件不完整')
                     self.retry(get)
                 else:
                     return resp
